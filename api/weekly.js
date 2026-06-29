@@ -25,7 +25,7 @@ function buildMessage(plants, profiles, scoresMap, settings, at) {
     .filter((p) => (scoresMap[p.id] || 0) > 0).slice(0, 3);
   const medals = ["🥇", "🥈", "🥉"];
   const lb = top3.length
-    ? `\n*⭐ Kastelu-leaderboard*\n${top3.map((p, i) => `${medals[i]} ${p.name} — ${scoresMap[p.id]} ⭐`).join("\n")}`
+    ? `\n\n*⭐ Leaderboard*\n${top3.map((p, i) => `${medals[i]} ${p.name} — ${scoresMap[p.id]} ⭐`).join("\n")}`
     : "";
   const url = settings?.artifact_link || process.env.ARTIFACT_OR_APP_URL || "";
   const link = url ? `\n\n👉 *Kastele Kastelija-apissa:* ${url}` : "";
