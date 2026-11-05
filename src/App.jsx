@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase";
+import { isWinter, seasonalCare } from "./lib/season";
 
 /* ============ BRAND ============ */
 const BRAND = { blue: "#4560E8", dark: "#0C1F36", cream: "#E8E5D4", orange: "#E8832A", white: "#FFFFFF", light: "#F5F4F0", logoBlue: "#173147", logoCream: "#E5E4CF" };
@@ -7,6 +8,10 @@ const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "ilmio";
 const ALLOWED_DOMAIN = "@ilmiotalent.fi";
 const CHANNELS = [{ label: "#1-general", id: "C03HZNXBTB3" }, { label: "#3-sandbox", id: "C05KWN8G2R5" }];
 const PALETTE = ["#4560E8", "#E8832A", "#0C1F36", "#6B7FEE", "#D4711F", "#2A4158", "#3C8C6E", "#9B4DCA", "#C0392B", "#1E7FA8"];
+const WINTER_ON = isWinter();
+const ICE = { bg: "#EAF0F6", tile: "#E1EAF3", border: "#D3DEEA", header: "linear-gradient(165deg, #0C1F36 0%, #173A5E 60%, #2B5A85 100%)" };
+const PAGE_BG = WINTER_ON ? ICE.bg : BRAND.light;
+const TILE_BG = WINTER_ON ? ICE.tile : BRAND.light;
 const btnBase = { padding: "11px 14px", fontSize: 14, fontWeight: 600, border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "'Work Sans', sans-serif" };
 
 /* ============ HELPERS ============ */
@@ -22,7 +27,7 @@ function initialsOf(name) { if (!name) return "?"; const parts = name.trim().spl
 function nameFromEmail(email) { const local = (email || "").split("@")[0].split(".")[0]; return local ? local.charAt(0).toUpperCase() + local.slice(1) : email; }
 
 /* ============ DATA LAYER ============ */
-function rowToPlant(r) { return { id: r.id, emoji: r.emoji, name: r.name, latin: r.latin, location: r.location, interval: r.interval_days, ml: r.ml, lastWatered: r.last_watered, bio: r.bio, care: r.care }; }
+function rowToPlant(r) { const c = seasonalCare(r.id, r.interval_days, r.ml); return { id: r.id, emoji: r.emoji, name: r.name, latin: r.latin, location: r.location, interval: c.interval, ml: c.ml, winter: c.winter, summerInterval: r.interval_days, summerMl: r.ml, lastWatered: r.last_watered, bio: r.bio, care: r.care }; }
 async function fetchAll() {
   const [{ data: plants }, { data: profiles }, { data: scores }, { data: hist }, { data: settingsRow }] = await Promise.all([
     supabase.from("plants").select("*").order("sort_order"),
@@ -41,6 +46,29 @@ async function fetchAll() {
 }
 
 /* ============ UI PRIMITIVES ============ */
+const SNOW_CSS = `
+@keyframes kastelija-snow { 0% { transform: translate3d(0,-10px,0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate3d(var(--drift),var(--fall),0); opacity: 0; } }
+.kastelija-flake { position: absolute; top: 0; color: #FFFFFF; pointer-events: none; user-select: none; animation: kastelija-snow linear infinite; }
+@media (prefers-reduced-motion: reduce) { .kastelija-flake { animation: none; opacity: 0.5; } }
+`;
+const FLAKES = Array.from({ length: 22 }, (_, i) => ({ left: (i * 37) % 100, size: 8 + ((i * 7) % 9), dur: 7 + ((i * 5) % 8), delay: -((i * 13) % 15), drift: ((i % 5) - 2) * 14 }));
+function Snowfall({ fall = 160 }) {
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <style>{SNOW_CSS}</style>
+      {FLAKES.map((f, i) => <span key={i} className="kastelija-flake" style={{ left: `${f.left}%`, fontSize: f.size, opacity: 0.8, animationDuration: `${f.dur}s`, animationDelay: `${f.delay}s`, "--drift": `${f.drift}px`, "--fall": `${fall}px` }}>❄</span>)}
+    </div>
+  );
+}
+function WinterNote() {
+  return (
+    <div style={{ background: BRAND.white, border: `1px solid ${ICE.border}`, borderRadius: 12, padding: "12px 16px", fontSize: 13, color: BRAND.dark, lineHeight: 1.55, marginBottom: 14, display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <span style={{ fontSize: 22, lineHeight: 1 }}>❄️</span>
+      <div><b>Talvikausi päällä.</b> Kasvit lepäävät marraskuusta helmikuun loppuun, joten syklit ovat pidempiä ja vesimäärät pienempiä. Kurkkaa silti ennen kastelua, että multa on kuiva 2-3 cm syvyydeltä.</div>
+    </div>
+  );
+}
+
 const ILMIO_PATHS = "M50.82,79.02h40.16v201.82h-40.16V79.02Z M130.62,79.02h40.16v169.28h68.82v32.54h-108.98V79.02Z M267.07,79.02h74.25l46.35,169.28h14.55l44.41-169.28h73.34v201.82h-41.45V109.75h-4.26l-47.52,171.09h-67.61l-46.61-171.09h-4.13v171.09h-41.32V79.02Z M559.61,79.02h40.16v201.82h-40.16V79.02Z M632.67,218.99v-78.25c0-41.19,28.15-65.21,72.83-65.21s72.57,24.02,72.57,65.21v78.25c0,41.32-28.02,65.72-72.57,65.72s-72.83-24.4-72.83-65.72ZM674.37,16.91c13.04,0,22.73,9.94,22.73,22.47,0,13.17-9.68,22.73-22.73,22.73s-22.86-9.56-22.86-22.73,9.68-22.47,22.86-22.47ZM705.49,253.85c18.85,0,30.73-11.49,30.73-30.22v-82.64c0-21.43-11.88-34.61-30.73-34.61s-30.86,13.17-30.86,34.61v82.64c0,18.72,11.75,30.22,30.86,30.22ZM736.48,16.91c13.04,0,22.86,9.94,22.86,22.47,0,13.17-9.81,22.73-22.86,22.73s-22.86-9.56-22.86-22.73,9.81-22.47,22.86-22.47Z";
 const IlmioLogo = ({ color = BRAND.logoBlue, height = 22 }) => (
   <svg viewBox="0 0 821.17 343.77" height={height} width={height * (821.17 / 343.77)} style={{ display: "block" }} aria-label="ILMIÖ"><path d={ILMIO_PATHS} fill={color} /></svg>
@@ -50,27 +78,27 @@ function Avatar({ person, size = 36 }) {
   return <div style={{ width: size, height: size, borderRadius: "50%", background: colorFor(person.id), color: BRAND.white, border: `2px solid ${BRAND.white}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(size * 0.36), fontWeight: 600, flexShrink: 0 }}>{initialsOf(person.name)}</div>;
 }
 function StatusBadge({ daysLeft }) {
-  const s = daysLeft <= 0 ? { bg: BRAND.orange, c: BRAND.white, label: "KASTELE NYT" } : daysLeft <= 2 ? { bg: BRAND.cream, c: BRAND.dark, label: `${daysLeft} PV` } : { bg: BRAND.light, c: BRAND.dark, label: `${daysLeft} PV` };
+  const s = daysLeft <= 0 ? { bg: BRAND.orange, c: BRAND.white, label: "KASTELE NYT" } : daysLeft <= 2 ? { bg: BRAND.cream, c: BRAND.dark, label: `${daysLeft} PV` } : { bg: TILE_BG, c: BRAND.dark, label: `${daysLeft} PV` };
   return <span style={{ background: s.bg, color: s.c, fontSize: 10, padding: "3px 10px", borderRadius: 20, fontWeight: 600, letterSpacing: "0.08em", fontFamily: "ui-monospace, monospace" }}>{s.label}</span>;
 }
 function ProgressBar({ plant }) {
   const pct = Math.min(Math.max(Math.floor((new Date() - new Date(plant.lastWatered)) / 86400000) / plant.interval, 0), 1);
-  const color = pct >= 1 ? BRAND.orange : pct >= 0.75 ? "#D4A11F" : BRAND.blue;
-  return <div style={{ height: 4, background: BRAND.light, borderRadius: 2, marginTop: 8 }}><div style={{ height: 4, borderRadius: 2, background: color, width: `${Math.round(pct * 100)}%`, transition: "width 0.4s" }} /></div>;
+  const color = pct >= 1 ? BRAND.orange : pct >= 0.75 ? "#D4A11F" : WINTER_ON ? "#5B8FC7" : BRAND.blue;
+  return <div style={{ height: 4, background: TILE_BG, borderRadius: 2, marginTop: 8 }}><div style={{ height: 4, borderRadius: 2, background: color, width: `${Math.round(pct * 100)}%`, transition: "width 0.4s" }} /></div>;
 }
 
 function PlantCard({ plant, onClick, selectMode, selected, onToggle }) {
   const dl = getDaysLeft(plant);
   return (
-    <div onClick={() => (selectMode ? onToggle(plant.id) : onClick(plant))} style={{ background: BRAND.white, border: selectMode && selected ? `2px solid ${BRAND.blue}` : dl <= 0 ? `2px solid ${BRAND.orange}` : "1px solid #E3E1D8", borderRadius: 16, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", boxShadow: "0 1px 3px rgba(12,31,54,0.05)" }}>
+    <div onClick={() => (selectMode ? onToggle(plant.id) : onClick(plant))} style={{ background: BRAND.white, border: selectMode && selected ? `2px solid ${BRAND.blue}` : dl <= 0 ? `2px solid ${BRAND.orange}` : `1px solid ${WINTER_ON ? ICE.border : "#E3E1D8"}`, borderRadius: 16, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", boxShadow: "0 1px 3px rgba(12,31,54,0.05)" }}>
       {selectMode && <div style={{ width: 22, height: 22, borderRadius: 6, border: selected ? "none" : "2px solid #C7CBD1", background: selected ? BRAND.blue : "transparent", color: BRAND.white, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{selected ? "✓" : ""}</div>}
-      <div style={{ fontSize: 26, width: 48, height: 48, borderRadius: 12, background: BRAND.light, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{plant.emoji}</div>
+      <div style={{ fontSize: 26, width: 48, height: 48, borderRadius: 12, background: TILE_BG, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, position: "relative" }}>{plant.emoji}{plant.winter && <span style={{ position: "absolute", top: -5, right: -5, fontSize: 13 }}>❄️</span>}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span style={{ fontSize: 16, fontWeight: 600, color: BRAND.dark }}>{plant.name}</span>
           <span style={{ fontSize: 10, color: BRAND.blue, fontWeight: 600, letterSpacing: "0.08em", fontFamily: "ui-monospace, monospace", textTransform: "uppercase" }}>{plant.location}</span>
         </div>
-        <div style={{ fontSize: 12, color: "#5A6B7E", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>{plant.ml} ml · {plant.interval} pv sykli</div>
+        <div style={{ fontSize: 12, color: "#5A6B7E", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>{plant.ml} ml · {plant.interval} pv {plant.winter ? "talvisykli" : "sykli"}{plant.winter && <span style={{ color: "#8A95A3" }}> (kesällä {plant.summerInterval} pv)</span>}</div>
         <ProgressBar plant={plant} />
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -90,7 +118,7 @@ function PlantModal({ plant, me, onWater, onClose }) {
   const dl = getDaysLeft(plant);
   return (
     <ModalShell>
-      <div style={{ background: BRAND.cream, padding: "22px 24px 18px" }}>
+      <div style={{ background: WINTER_ON ? ICE.tile : BRAND.cream, padding: "22px 24px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 36 }}>{plant.emoji}</span>
@@ -105,8 +133,8 @@ function PlantModal({ plant, me, onWater, onClose }) {
       </div>
       <div style={{ padding: "18px 24px 24px" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-          {[{ v: Math.max(dl, 0), l: "PV KASTELUUN", hi: dl <= 0 }, { v: `${plant.ml}`, l: "ML VETTÄ" }, { v: plant.interval, l: "PV SYKLI" }].map((s, i) => (
-            <div key={i} style={{ flex: 1, background: BRAND.light, borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
+          {[{ v: Math.max(dl, 0), l: "PV KASTELUUN", hi: dl <= 0 }, { v: `${plant.ml}`, l: "ML VETTÄ" }, { v: plant.interval, l: plant.winter ? "PV TALVISYKLI" : "PV SYKLI" }].map((s, i) => (
+            <div key={i} style={{ flex: 1, background: TILE_BG, borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
               <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "ui-monospace, monospace", color: s.hi ? BRAND.orange : BRAND.dark }}>{s.v}</div>
               <div style={{ fontSize: 9, color: "#5A6B7E", letterSpacing: "0.08em", marginTop: 2 }}>{s.l}</div>
             </div>
@@ -115,7 +143,8 @@ function PlantModal({ plant, me, onWater, onClose }) {
         <div style={{ fontSize: 11, fontWeight: 600, color: BRAND.blue, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6, fontFamily: "ui-monospace, monospace" }}>Kuka tää tyyppi on</div>
         <p style={{ fontSize: 14, lineHeight: 1.65, color: BRAND.dark, margin: "0 0 16px" }}>{plant.bio}</p>
         <div style={{ fontSize: 11, fontWeight: 600, color: BRAND.blue, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6, fontFamily: "ui-monospace, monospace" }}>Hoito-ohjeet</div>
-        <p style={{ fontSize: 14, lineHeight: 1.65, color: BRAND.dark, margin: "0 0 20px" }}>{plant.care}</p>
+        <p style={{ fontSize: 14, lineHeight: 1.65, color: BRAND.dark, margin: plant.winter ? "0 0 12px" : "0 0 20px" }}>{plant.care}</p>
+        {plant.winter && <div style={{ background: TILE_BG, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: BRAND.dark, lineHeight: 1.5, marginBottom: 20 }}>❄️ Talvella {plant.ml} ml noin {plant.interval} päivän välein. Kesällä {plant.summerMl} ml ja {plant.summerInterval} päivän välein.</div>}
         <button onClick={() => onWater([plant.id])} style={{ ...btnBase, width: "100%", padding: 14, fontSize: 15, background: BRAND.blue, color: BRAND.white }}>💧 Kasteltu — kirjaa nimiini ({me.name})</button>
       </div>
     </ModalShell>
@@ -262,7 +291,7 @@ function SlackPanel({ plants, profiles, scores, settings, onChannelChange }) {
       <div style={{ background: BRAND.dark, borderRadius: 16, padding: 16, fontSize: 12, color: BRAND.cream, lineHeight: 1.9, fontFamily: "ui-monospace, monospace", whiteSpace: "pre-wrap" }}>{buildWeekly(plants, profiles, scores, settings, getNextMonday0900())}</div>
       <button onClick={sendNow} disabled={loading} style={{ ...btnBase, background: BRAND.orange, color: BRAND.white }}>{loading ? "..." : "Lähetä nyt"}</button>
       {status && <div style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 500, background: status.ok ? BRAND.cream : "#FCEBEB", color: status.ok ? BRAND.dark : "#A32D2D" }}>{status.ok ? "✓ " : "⚠ "}{status.msg}</div>}
-      <div style={{ background: BRAND.light, borderRadius: 12, padding: "12px 14px", fontSize: 12, color: "#5A6B7E", lineHeight: 1.6 }}><b style={{ color: BRAND.dark }}>Automaattinen muistutus:</b> maanantain klo 9 viesti lähtee itsestään (Vercel Cron). Tästä voit lähettää viestin myös heti, esim. testiksi sandboxiin.</div>
+      <div style={{ background: TILE_BG, borderRadius: 12, padding: "12px 14px", fontSize: 12, color: "#5A6B7E", lineHeight: 1.6 }}><b style={{ color: BRAND.dark }}>Automaattinen muistutus:</b> maanantain klo 9 viesti lähtee itsestään (Vercel Cron). Tästä voit lähettää viestin myös heti, esim. testiksi sandboxiin.</div>
     </div>
   );
 }
@@ -283,11 +312,12 @@ function Login() {
     if (error) setErr(error.message); else setSent(true);
   };
   return (
-    <div style={{ background: BRAND.light, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Work Sans', sans-serif", padding: 20 }}>
+    <div style={{ background: PAGE_BG, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Work Sans', sans-serif", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 380 }}>
-        <div style={{ background: BRAND.dark, borderRadius: 24, padding: "28px 26px", marginBottom: 16 }}>
+        <div style={{ background: WINTER_ON ? ICE.header : BRAND.dark, borderRadius: 24, padding: "28px 26px", marginBottom: 16, position: "relative", overflow: "hidden" }}>
+          {WINTER_ON && <Snowfall fall={170} />}
           <IlmioLogo color={BRAND.logoCream} height={24} />
-          <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.white, marginTop: 10 }}>Kastelija 💧</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.white, marginTop: 10 }}>Kastelija {WINTER_ON ? "❄️" : "💧"}</div>
           <div style={{ fontSize: 13, color: "#A8B5C4", marginTop: 4 }}>Toimiston kasvien hoito. Kirjaudu Ilmiön sähköpostilla.</div>
         </div>
         {sent ? (
@@ -348,7 +378,7 @@ export default function App() {
     return () => { supabase.removeChannel(ch); };
   }, [session, reload]);
 
-  if (session === undefined) return <div style={{ background: BRAND.light, minHeight: "100vh" }} />;
+  if (session === undefined) return <div style={{ background: PAGE_BG, minHeight: "100vh" }} />;
   if (!session) return <Login />;
 
   const { plants, profiles, scores, history, settings } = data;
@@ -378,14 +408,15 @@ export default function App() {
   const sortedPlants = [...plants].sort((a, b) => getDaysLeft(a) - getDaysLeft(b));
 
   return (
-    <div style={{ background: BRAND.light, minHeight: "100vh", fontFamily: "'Work Sans', sans-serif" }}>
+    <div style={{ background: PAGE_BG, minHeight: "100vh", fontFamily: "'Work Sans', sans-serif" }}>
       <div style={{ padding: "0 0 4.5rem", maxWidth: 640, margin: "0 auto", position: "relative" }}>
-        <div style={{ background: BRAND.dark, padding: "20px 22px 24px", borderRadius: "0 0 24px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ background: WINTER_ON ? ICE.header : BRAND.dark, padding: "20px 22px 24px", borderRadius: "0 0 24px 24px", position: "relative", overflow: "hidden" }}>
+          {WINTER_ON && <Snowfall fall={150} />}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "relative" }}>
             <div>
               <IlmioLogo color={BRAND.logoCream} height={26} />
-              <div style={{ fontSize: 26, fontWeight: 700, color: BRAND.white, marginTop: 8 }}>Kastelija 💧</div>
-              <div style={{ fontSize: 13, color: "#A8B5C4", marginTop: 2 }}>{plants.length} kasvia · {profiles.length} kastelijaa</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: BRAND.white, marginTop: 8 }}>Kastelija {WINTER_ON ? "❄️" : "💧"}</div>
+              <div style={{ fontSize: 13, color: "#A8B5C4", marginTop: 2 }}>{plants.length} kasvia · {profiles.length} kastelijaa{WINTER_ON ? " · talvikausi" : ""}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
               {me && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar person={me} size={32} /><span style={{ fontSize: 13, color: BRAND.white, fontWeight: 600 }}>{me.name}</span></div>}
@@ -400,10 +431,11 @@ export default function App() {
             <>
               {(urgent > 0 || soon > 0) && <div style={{ background: urgent > 0 ? BRAND.orange : BRAND.cream, borderRadius: 12, padding: "11px 16px", fontSize: 13, fontWeight: 600, color: urgent > 0 ? BRAND.white : BRAND.dark, marginBottom: 14 }}>{urgent > 0 ? `${urgent} kasvia odottaa kastelua nyt` : `${soon} kasvia vuorossa lähipäivinä`}</div>}
               <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 2 }}>
-                {tabs.map((t) => <button key={t.id} onClick={() => { setTab(t.id); setSelectMode(false); setSelected([]); }} style={{ fontSize: 13, fontWeight: 600, padding: "8px 14px", borderRadius: 20, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "'Work Sans', sans-serif", background: tab === t.id ? BRAND.dark : BRAND.white, color: tab === t.id ? BRAND.cream : BRAND.dark, border: tab === t.id ? `1px solid ${BRAND.dark}` : "1px solid #E3E1D8" }}>{t.label}</button>)}
+                {tabs.map((t) => <button key={t.id} onClick={() => { setTab(t.id); setSelectMode(false); setSelected([]); }} style={{ fontSize: 13, fontWeight: 600, padding: "8px 14px", borderRadius: 20, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "'Work Sans', sans-serif", background: tab === t.id ? BRAND.dark : BRAND.white, color: tab === t.id ? BRAND.cream : BRAND.dark, border: tab === t.id ? `1px solid ${BRAND.dark}` : `1px solid ${WINTER_ON ? ICE.border : "#E3E1D8"}` }}>{t.label}</button>)}
               </div>
               {tab === "kasvit" && (
                 <>
+                  {WINTER_ON && <WinterNote />}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
                     <button onClick={() => { setSelectMode((m) => !m); setSelected([]); }} style={{ ...btnBase, padding: "8px 14px", fontSize: 13, background: selectMode ? BRAND.dark : BRAND.white, color: selectMode ? BRAND.cream : BRAND.dark, border: `1px solid ${selectMode ? BRAND.dark : "#E3E1D8"}` }}>{selectMode ? "Poistu valinnasta" : "☑ Valitse useampi"}</button>
                     {selectMode && <div style={{ display: "flex", gap: 6 }}>
