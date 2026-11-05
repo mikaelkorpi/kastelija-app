@@ -4,10 +4,15 @@
 // Rakentaa viikkoviestin Supabasen datasta ja postaa sen Slackiin bot-tokenilla.
 
 import { createClient } from "@supabase/supabase-js";
+import { seasonalCare, isWinter } from "../src/lib/season.js";
+
+function care(plant, at) {
+  return seasonalCare(plant.id, plant.interval_days, plant.ml, at);
+}
 
 function daysLeft(plant, at) {
   const since = Math.floor((at - new Date(plant.last_watered)) / 86400000);
-  return plant.interval_days - since;
+  return care(plant, at).interval - since;
 }
 
 function buildMessage(plants, profiles, scoresMap, settings, at) {
@@ -15,12 +20,15 @@ function buildMessage(plants, profiles, scoresMap, settings, at) {
   const lines = sorted.map((p) => {
     const dl = daysLeft(p, at);
     const s = dl <= 0 ? "🔴 Kastele nyt!" : dl <= 2 ? `🟡 ${dl} pv` : `🟢 ${dl} pv`;
-    return `${p.emoji} *${p.name}* (${p.location}) — ${p.ml} ml — ${s}`;
+    return `${p.emoji} *${p.name}* (${p.location}) — ${care(p, at).ml} ml — ${s}`;
   }).join("\n");
   const urgent = sorted.filter((p) => daysLeft(p, at) <= 0);
+  const winter = isWinter(at);
+  const icon = winter ? "❄️" : "🌿";
   const header = urgent.length
-    ? `🌿 *Hyvää maanantaita!* ${urgent.length} kasvia kaipaa kastelua tällä viikolla.`
-    : `🌿 *Hyvää maanantaita!* Kasvien viikkokatsaus 🌱`;
+    ? `${icon} *Hyvää maanantaita!* ${urgent.length} kasvia kaipaa kastelua tällä viikolla.`
+    : `${icon} *Hyvää maanantaita!* Kasvien viikkokatsaus 🌱`;
+  const seasonNote = winter ? "\n_Talvikausi: kastellaan harvemmin ja vähemmän._" : "";
   const top3 = [...profiles].sort((a, b) => (scoresMap[b.id] || 0) - (scoresMap[a.id] || 0))
     .filter((p) => (scoresMap[p.id] || 0) > 0).slice(0, 3);
   const medals = ["🥇", "🥈", "🥉"];
@@ -29,7 +37,7 @@ function buildMessage(plants, profiles, scoresMap, settings, at) {
     : "";
   const url = settings?.artifact_link || process.env.ARTIFACT_OR_APP_URL || "";
   const link = url ? `\n\n👉 *Kastele Kastelija-apissa:* ${url}` : "";
-  return `${header}\n\n${lines}${lb}${link}`;
+  return `${header}${seasonNote}\n\n${lines}${lb}${link}`;
 }
 
 export default async function handler(req, res) {
